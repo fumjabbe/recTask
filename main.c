@@ -68,24 +68,25 @@ void main()
     double temp = 0.0;
     uint16_t index = 0;
 
-    struct timespec ts = {0, 100 * 1000000L};  // Sleep for 100ms
+    struct timespec ts100 = {0, 100 * 1000000L};  // Sleep for 100ms
+    struct timespec ts50 = {0, 50 * 1000000L};  // Sleep for 100ms
 
-    nanosleep(&ts, NULL);
+    nanosleep(&ts100, NULL);
     index = 30;
     temp = getTemperature(index);
     printf("Temperature: %.2fC\n", temp);
     
-    nanosleep(&ts, NULL);
+    nanosleep(&ts50, NULL);
     index = 162;
     temp = getTemperature(index);
     printf("Temperature: %.2fC\n", temp);
     
-    nanosleep(&ts, NULL);
+    nanosleep(&ts100, NULL);
     index = 173;
     temp = getTemperature(index);
     printf("Temperature: %.2fC\n", temp);
     
-    nanosleep(&ts, NULL);
+    nanosleep(&ts100, NULL);
     index = 137;
     temp = getTemperature(index);
     printf("Temperature: %.2fC\n", temp);
