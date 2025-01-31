@@ -2,10 +2,11 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <time.h>
+#include <stdbool.h>
 
 #define ADC_READ_INTERVAL 100
 #define FILE_READ_END 100
-static clock_t last_temp_read_time = 0;       // Store last time temperature was read
+static clock_t last_time_100ms = 0;       // Store last time 100ms was reached
 
 /*
 ADCvalue()
@@ -59,24 +60,33 @@ For example the ADC can read the following values from the sensor:
 double getTemperature(uint16_t index)
 {
     uint16_t readADCvalue;
+
+    readADCvalue = ADCvalue(index);
+
+    if(readADCvalue == 0)
+    {
+        printf("Error: problem reading from file.\n");
+        return 0;
+    }
+    else
+    {
+        return ((readADCvalue / 4095.0) * 100.0) - 50.0;
+    } 
+}
+/*
+Function that is true each time 100ms clock cycles has passed
+*/
+bool tasks100ms(void)
+{
+    //get current clock cycles since program start
     clock_t current_time = clock();
-    double elapsed_time = (double)(current_time - last_temp_read_time);
-    
+    double elapsed_time = (double)(current_time - last_time_100ms);
     if (elapsed_time >= ADC_READ_INTERVAL) 
     {
-        last_temp_read_time = current_time;  // Update last read time
-        readADCvalue = ADCvalue(index);
-
-        if(readADCvalue == 0)
-        {
-            printf("Error: problem reading from file.\n");
-            return 0;
-        }
-        else
-        {
-            return ((readADCvalue / 4095.0) * 100.0) - 50.0;
-        }
-    } 
+        last_time_100ms = current_time;  // Update last read time
+        return true;
+    }
+    return false;
 }
 
 void main()
@@ -86,12 +96,12 @@ void main()
 
     while (1)
     {
-        temp = getTemperature(index);
-        if (temp)
+        if (tasks100ms)
         {
+            temp = getTemperature(index);
             index++;
             printf("Temperature: %.2fC\n", temp);
         }
-        if(index == 766) break;
+        if(index == 767) break;
     } 
 }
