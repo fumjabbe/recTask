@@ -4,21 +4,23 @@
 #include <time.h>
 #include <stdbool.h>
 
-#define ADC_READ_INTERVAL 100
-#define FILE_READ_END 100
+#define ADC_READ_INTERVAL 100 //100ms
+#define MAX_BUFFER_SIZE 1024
+#define DURATION_MS 120000 // Total duration 120000ms (2 minutes)
+#define NUM_READINGS (DURATION_MS / ADC_READ_INTERVAL)
+
 static clock_t last_time_100ms = 0;       // Store last time 100ms was reached
+static uint16_t buffer[MAX_BUFFER_SIZE];
+static uint16_t totalLinesCounter = 0;
 
 /*
-ADCvalue()
-Testfunction that reads a test ADC value from a file a location "index".
+getTestADCvaluesFromFile()
+Testfunction that reads a test ADC file and stores in memory
+This approach was chosen to not constantly open, read and close the file each 100ms for 2 minutes or longer.
 */
-uint16_t ADCvalue(uint16_t index) 
+bool getTestADCvaluesFromFile() 
 {
     FILE *file;
-    uint16_t linecounter = 0;
-    char buffer[32];
-    uint16_t adcvalue;
-
     //open file
     file = fopen("temperature.txt", "r");
     if (file == NULL) 
@@ -27,29 +29,24 @@ uint16_t ADCvalue(uint16_t index)
         return 0;
     }
 
-    // Read each line from the file until location is reached or end-of-file is reached
-    while (fgets(buffer, sizeof(buffer), file) != NULL) 
+    // Read thorugh the file
+    while (totalLinesCounter < MAX_BUFFER_SIZE && fscanf(file, "%d", &buffer[totalLinesCounter]) == 1) 
     {
-        //check if we are at the current index
-        if(linecounter == index)
-        {
-            fclose(file);
-            adcvalue = atoi(buffer);
-            if (adcvalue < 0 || adcvalue > 4095) 
-            {
-                printf("Error: ADC value must be between 0 and 4095.\n");
-                return 0;  // Return an error value
-            }
-            return adcvalue;
-        }
-        //increase for next round
-        linecounter++;
+        totalLinesCounter++;
     }
-    //file index ended
-    fclose(file);
-    return 0;
-}
 
+    fclose(file);
+    return 1;
+}
+/*
+Function that gets the integer at a certain index
+Wraps back to start .
+*/
+uint16_t getADCvalue(uint16_t index)
+{
+    uint16_t targetIndex = (index - 1) % totalLinesCounter + 1;
+    return buffer[targetIndex];
+}
 /*
 The temperature sensor reports a temperature range of -50C to +50C and can be read every 100ms.
 For example the ADC can read the following values from the sensor:
@@ -59,19 +56,7 @@ For example the ADC can read the following values from the sensor:
 */
 double getTemperature(uint16_t index)
 {
-    uint16_t readADCvalue;
-
-    readADCvalue = ADCvalue(index);
-
-    if(readADCvalue == 0)
-    {
-        printf("Error: problem reading from file.\n");
-        return 0;
-    }
-    else
-    {
-        return ((readADCvalue / 4095.0) * 100.0) - 50.0;
-    } 
+    return ((getADCvalue(index) / 4095.0) * 100.0) - 50.0;
 }
 /*
 Function that is true each time 100ms clock cycles has passed
@@ -91,17 +76,41 @@ bool tasks100ms(void)
 
 void main()
 {
-    double temp = 0.0;
-    uint16_t index = 0;
+    double  temperature = 0.0,
+            minVal = 0.0,
+            maxVal = 0.0,
+            avgVal = 0.0;
+    uint16_t reading = 0;
 
-    while (1)
+    if(getTestADCvaluesFromFile())
     {
-        if (tasks100ms)
+        while (1)
         {
-            temp = getTemperature(index);
-            index++;
-            printf("Temperature: %.2fC\n", temp);
+            if (tasks100ms)
+            {
+                temperature = getTemperature(reading);
+                reading++;
+                
+                if (temperature < minVal) 
+                {
+                    minVal = temperature;
+                }
+                if (temperature > maxVal)
+                {
+                    maxVal = temperature;
+                }
+                avgVal += temperature;
+                
+                if(reading >= NUM_READINGS)
+                {
+                    avgVal = avgVal / NUM_READINGS;
+                    
+                     
+                                    
+                    minVal = 0.0;
+                    maxVal = 0.0;
+                }
+            }
         }
-        if(index == 767) break;
     } 
 }
