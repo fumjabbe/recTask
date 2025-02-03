@@ -10,6 +10,7 @@
 #define DURATION_MS 120000 // Total duration 120000ms (2 minutes)
 #define NUM_READINGS (DURATION_MS / ADC_READ_INTERVAL)
 #define URL "http://localhost:5000/api/temperature"
+#define ALT_URL "http://localhost:5000/api/temperature/missing"
 
 static clock_t last_time_100ms = 0;       // Store last time 100ms was reached
 static uint16_t buffer[MAX_BUFFER_SIZE];
@@ -74,6 +75,10 @@ void getTime(char *buffer, size_t size)
     strftime(buffer, size, "%Y-%m-%dT%H:%M:%SZ", tm_info);
 }
 
+void storePayload(char *payload)
+{
+
+}
 /*
 Function that formats JSON payload and post to HTTP rest api
 */
@@ -81,19 +86,23 @@ void formatJSONPostHTTP(char *startTime, char *endTime, double minTemp, double m
 {
     CURL *curl;
     CURLcode res;
-    char data[512];
+    char payload[512];
+    long responseCode = 0;
 
     // Format the JSON payload
-    snprintf(data, sizeof(data), 
-             "{\"time\": {\"start\": \"%s\", \"end\": \"%s\"}, \"min\": %.2f, \"max\": %.2f, \"average\": %.2f}", 
+    snprintf(payload, sizeof(payload), 
+             "{\"time\": {\"start\": \"%s\", \"end\": \"%s\"}, \"min\": %.2f, \"max\": %.2f, \"Avg\": %.2f}", 
              startTime, endTime, minTemp, maxTemp, avgTemp);
 
-    
+    //store last 10 payloads
+    storePayload(payload);
+
     //post the data
     curl_global_init(CURL_GLOBAL_ALL);
     curl = curl_easy_init();
     
-    if (curl) {
+    if (curl) 
+    {
         struct curl_slist *headers = NULL;
         headers = curl_slist_append(headers, "Content-Type: application/json");
 
@@ -104,7 +113,15 @@ void formatJSONPostHTTP(char *startTime, char *endTime, double minTemp, double m
 
         // Perform the request
         res = curl_easy_perform(curl);
-        if (res != CURLE_OK) {
+        
+        //get response code
+        if(res == CURLE_OK)
+        {
+            curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &responseCode);            
+        }
+        //error code from example
+        else
+        {
             fprintf(stderr, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
         }
 
@@ -113,8 +130,12 @@ void formatJSONPostHTTP(char *startTime, char *endTime, double minTemp, double m
         curl_easy_cleanup(curl);
     }
     
-    curl_global_cleanup();
+    if(responseCode == 500)
+    {
 
+    }
+
+    curl_global_cleanup();
 }
 
 /*
@@ -139,7 +160,7 @@ void main()
             minVal = 0.0,
             maxVal = 0.0;
             
-    size_t avgVal = 0.0;
+    double avgVal = 0.0;
 
     uint16_t reading = 0;
 
@@ -147,11 +168,12 @@ void main()
     char endTime[32];
 
     if(getTestADCvaluesFromFile())                          //read file and store content to memory
+    system("echo recTask started");
     {                                                       //only start program if file is found
         getTime(startTime, sizeof(startTime));              //get the time at the start of the program.
         while (1)
         {
-            if (tasks100ms)
+            if (tasks100ms())
             {
                 temperature = getTemperature(reading);      //Get a new reading each 100ms
                 reading++;
@@ -172,7 +194,9 @@ void main()
                     getTime(endTime, sizeof(endTime));      //get the time each 2minute interval as endtime variable.
                     formatJSONPostHTTP(startTime, endTime, minVal, maxVal, avgVal);
                     
-                    minVal = 0.0;                           //reset interval variables
+                    //reset interval variables
+                    reading = 0;
+                    minVal = 0.0;                           
                     maxVal = 0.0;
                     getTime(startTime, sizeof(startTime));  //get new start time for next interval
                 }
