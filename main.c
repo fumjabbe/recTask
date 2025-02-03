@@ -82,31 +82,29 @@ void main()
             avgVal = 0.0;
     uint16_t reading = 0;
 
-    if(getTestADCvaluesFromFile())
-    {
+    if(getTestADCvaluesFromFile())                          //read file and store content to memory
+    {                                                       //only start program if file is found
         while (1)
         {
             if (tasks100ms)
             {
-                temperature = getTemperature(reading);
+                temperature = getTemperature(reading);      //Get a new reading each 100ms
                 reading++;
                 
                 if (temperature < minVal) 
                 {
-                    minVal = temperature;
+                    minVal = temperature;                   //Store the lowest temperature registered in this periode
                 }
                 if (temperature > maxVal)
                 {
-                    maxVal = temperature;
+                    maxVal = temperature;                   //Store the highest temperature registered in this periode
                 }
                 avgVal += temperature;
-                
-                if(reading >= NUM_READINGS)
+
+                if(reading >= NUM_READINGS)                 //Each 2.minute, calculate average and post to rest api
                 {
                     avgVal = avgVal / NUM_READINGS;
                     
-                     
-                                    
                     minVal = 0.0;
                     maxVal = 0.0;
                 }
