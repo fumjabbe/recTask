@@ -171,7 +171,7 @@ void formatJSONPostHTTP(char *startTime, char *endTime, double minTemp, double m
     //store payload
     savePayload(payload);
 
-    //last attempt failed, send history to alternative url and the last history entry to current url
+    //last attempt failed, send history to alternative url and the last failed payload to current url
     if(HTTPresponseCode == 500)
     { 
         char jsonArrayPayload[4096] = "[";
