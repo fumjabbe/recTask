@@ -7,8 +7,8 @@
 
 #define ADC_READ_INTERVAL 100   //ms
 #define MAX_BUFFER_SIZE 1024
-#define DURATION 120            //seconds
-#define LOOPSPEED 100           //ms
+#define HTTPPOSTDURATION 120    //seconds
+#define SAMPLERATE 500          //ms
 #define URL "http://localhost:5000/api/temperature"
 #define ALT_URL "http://localhost:5000/api/temperature/missing"
 
@@ -46,13 +46,17 @@ bool getTestADCvaluesFromFile()
 }
 
 /*
-Function that gets the integer at a certain index
-Wraps back to start .
+Function that grabs a random adc value from test file
+For test purpose
 */
-uint16_t getADCvalue(uint16_t index)
+uint16_t getADCvalue()
 {
-    uint16_t targetIndex = index % totalLinesCounter;
-    return buffer[targetIndex];
+    //ensure different outputs on each run.
+    srand(time(0));
+    //ensure random number is in range of total lines in file
+    int randomNumber = rand() % totalLinesCounter;
+
+    return buffer[randomNumber];
 }
 
 /*
@@ -62,14 +66,14 @@ For example the ADC can read the following values from the sensor:
 2048 (rougly 0C)
 3000 (rougly 23C)
 */
-double getTemperature(uint16_t index)
+double getTemperature()
 {
     clock_t currentTime = clock();
     double elapsed_time = (double)(currentTime - lastreadTime);
     if (elapsed_time >= ADC_READ_INTERVAL) 
     {
         lastreadTime = currentTime;  // Update last read time
-        return ((getADCvalue(index) / 4095.0) * 100.0) - 50.0;
+        return ((getADCvalue() / 4095.0) * 100.0) - 50.0;
     }
     else 
     {
@@ -144,23 +148,24 @@ void formatJSONPostHTTP(char *startTime, char *endTime, double minTemp, double m
 
     //store it, up to 10 last payloads
     if(historyIndex >= 10) historyIndex = 0;
-    strcpy(payloadHistory[historyIndex], payload);
-    historyIndex++;
 
+    strcpy(payloadHistory[historyIndex], payload);
+    
     //if no failure has been registered, attempt sending it
     if(HTTPresponseCode != 500)
     {
         HTTPresponseCode = postHTTP(URL, payload);
+        historyIndex++;
         return;
     }
     
     //last attempt failed, send history to alternative url and the last history entry to current url
     if(HTTPresponseCode == 500)
-    {
+    { 
         char jsonArrayPayload[1024] = "[";
-        for (int i = 0; i < 10; i++) 
+        for (int i = 0; i < historyIndex; i++) 
         {
-            strcat(jsonArrayPayload, payloadHistory[i]);
+            strcat(jsonArrayPayload, payloadHistory[historyIndex]);
             strcat(jsonArrayPayload, ",");
         }
         strcat(jsonArrayPayload, "]");
@@ -171,18 +176,19 @@ void formatJSONPostHTTP(char *startTime, char *endTime, double minTemp, double m
         HTTPresponseCode = postHTTP(URL, payloadHistory[historyIndex-1]);
         //also send the current payload
         HTTPresponseCode = postHTTP(URL, payload);
+        historyIndex++;
     }
 }
 
 /*
-Check each time two minutes has passed
+Check each time http post duration has passed
 */
-bool task2min(void)
+bool taskpostHttp(void)
 {
     static time_t last_call_time = 0;
     time_t current_time = time(NULL);
 
-    if (current_time - last_call_time >= DURATION) 
+    if (current_time - last_call_time >= HTTPPOSTDURATION) 
     {
         last_call_time = current_time;  // Update last read time
         return true;
@@ -196,14 +202,13 @@ void main()
             minVal = 0.0,
             maxVal = 0.0,
             avgVal = 0.0;
-
-    uint16_t loopcounter = 0;
+    //loopcounter used for avg reading
+    uint16_t loopcounter = 0;   
 
     char startTime[32];
     char endTime[32];
-    struct timespec ts = {0, LOOPSPEED * 1000000L};         // Speed of how often the loop is running
 
-    task2min();                                             //init time
+    taskpostHttp();                                         //init time
 
     if(getTestADCvaluesFromFile())                          //read file and store content to memory
     {
@@ -211,7 +216,7 @@ void main()
         getTime(startTime, sizeof(startTime));              //get the time at the start of the program.
         while (1)
         {
-            temperature = getTemperature(loopcounter);          //Get a new reading
+            temperature = getTemperature();                 //Get a new reading
             if(temperature != -100)
             {   
                 loopcounter++;
@@ -227,9 +232,9 @@ void main()
                 avgVal += temperature;
             }
 
-            nanosleep(&ts, NULL);
+            Sleep(SAMPLERATE);
             
-            if(task2min())                                  //Each 2.minute, calculate average and post to HTTP REST endpoint
+            if(taskpostHttp())                                  //Each 2.minute, calculate average and post to HTTP REST endpoint
             {
                 avgVal = avgVal / loopcounter;
                 getTime(endTime, sizeof(endTime));          //get the time each 2minute interval as endtime variable.
