@@ -183,9 +183,9 @@ void formatJSONPostHTTP(char *startTime, char *endTime, double minTemp, double m
         strcat(jsonArrayPayload, "]");
 
         //send all the last 10 stored payloads to alternative url
-        postHTTP(ALT_URL, jsonArrayPayload);
+        HTTPresponseCode = postHTTP(ALT_URL, jsonArrayPayload);
         //send last temperature reading payload
-        postHTTP(URL, failedPayload);
+        HTTPresponseCode = postHTTP(URL, failedPayload);
     }
 
     HTTPresponseCode = postHTTP(URL, payload);
