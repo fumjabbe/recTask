@@ -11,13 +11,14 @@
 #define SAMPLERATE 500          //ms
 #define URL "http://localhost:5000/api/temperature"
 #define ALT_URL "http://localhost:5000/api/temperature/missing"
+#define MAX_HISTORY 10
 
-static clock_t lastreadTime = 0;  // Store last read time
 static uint16_t buffer[MAX_BUFFER_SIZE];
 static uint16_t totalLinesCounter = 0;
 char payloadHistory[10][512];
-uint8_t historyIndex = 0;
+int historyCount = 0;
 uint16_t HTTPresponseCode = 0;
+char failedPayload[512] = "";
 
 /*
 getTestADCvaluesFromFile()
@@ -68,8 +69,10 @@ For example the ADC can read the following values from the sensor:
 */
 double getTemperature()
 {
+    static clock_t lastreadTime = 0;
     clock_t currentTime = clock();
     double elapsed_time = (double)(currentTime - lastreadTime);
+    
     if (elapsed_time >= ADC_READ_INTERVAL) 
     {
         lastreadTime = currentTime;  // Update last read time
@@ -92,6 +95,7 @@ void getTime(char *buffer, size_t size)
     struct tm *tm_info = gmtime(&now);
     strftime(buffer, size, "%Y-%m-%dT%H:%M:%SZ", tm_info);
 }
+
 uint16_t postHTTP(const char *url, const char *payload)
 {
     CURL *curl;
@@ -134,50 +138,59 @@ uint16_t postHTTP(const char *url, const char *payload)
 
     return responseCode;
 }
+void savePayload(const char *payload) 
+{
+    if (historyCount < MAX_HISTORY) 
+    {
+        strcpy(payloadHistory[historyCount], payload);
+        historyCount++;
+    } 
+    else 
+    {
+        // Shift history to maintain last 10 records
+        for (int i = 1; i < MAX_HISTORY; i++) 
+        {
+            strcpy(payloadHistory[i - 1], payloadHistory[i]);
+        }
+        strcpy(payloadHistory[MAX_HISTORY - 1], payload);
+    }
+}
+
 /*
 Function that formats JSON payload and post to HTTP rest api
 */
 void formatJSONPostHTTP(char *startTime, char *endTime, double minTemp, double maxTemp, double avgTemp)
 {
     char payload[512];
-    
+
     // Format the JSON payload
     snprintf(payload, sizeof(payload), 
              "{\"time\": {\"start\": \"%s\", \"end\": \"%s\"}, \"min\": %.2f, \"max\": %.2f, \"Avg\": %.2f}", 
              startTime, endTime, minTemp, maxTemp, avgTemp);
 
-    //store it, up to 10 last payloads
-    if(historyIndex >= 10) historyIndex = 0;
+    //store payload
+    savePayload(payload);
 
-    strcpy(payloadHistory[historyIndex], payload);
-    
-    //if no failure has been registered, attempt sending it
-    if(HTTPresponseCode != 500)
-    {
-        HTTPresponseCode = postHTTP(URL, payload);
-        historyIndex++;
-        return;
-    }
-    
     //last attempt failed, send history to alternative url and the last history entry to current url
     if(HTTPresponseCode == 500)
     { 
-        char jsonArrayPayload[1024] = "[";
-        for (int i = 0; i < historyIndex; i++) 
+        char jsonArrayPayload[4096] = "[";
+        for (int i = 0; i < historyCount; i++) 
         {
-            strcat(jsonArrayPayload, payloadHistory[historyIndex]);
-            strcat(jsonArrayPayload, ",");
+            strcat(jsonArrayPayload, payloadHistory[i]);
+            if(i < (historyCount-1)) strcat(jsonArrayPayload, ",");
         }
         strcat(jsonArrayPayload, "]");
 
-        //send the last 10 stored payloads to alternative url
+        //send all the last 10 stored payloads to alternative url
         HTTPresponseCode = postHTTP(ALT_URL, jsonArrayPayload);
-        //send the last payload history entry
-        HTTPresponseCode = postHTTP(URL, payloadHistory[historyIndex-1]);
-        //also send the current payload
-        HTTPresponseCode = postHTTP(URL, payload);
-        historyIndex++;
+        //send last temperature reading payload
+        HTTPresponseCode = postHTTP(URL, failedPayload);
     }
+
+    HTTPresponseCode = postHTTP(URL, payload);
+    if(HTTPresponseCode != 500) historyCount = 0;
+    if(HTTPresponseCode == 500) strcpy(failedPayload, payload);
 }
 
 /*
@@ -214,9 +227,11 @@ void main()
     {
         system("echo recTask started");
         getTime(startTime, sizeof(startTime));              //get the time at the start of the program.
+        
         while (1)
         {
             temperature = getTemperature();                 //Get a new reading
+            
             if(temperature != -100)
             {   
                 loopcounter++;
